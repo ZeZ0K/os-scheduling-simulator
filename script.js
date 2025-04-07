@@ -18,19 +18,14 @@ class Process {
     }
 }
 
-// Generate random number between min and max (inclusive)
-function getRandomInt(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
 // Generate random processes
 function generateProcesses() {
     return Array.from({ length: Math.floor(Math.random() * 2) + 5 }, (_, i) => 
         new Process(
-            String.fromCharCode(65 + i), // A, B, C, etc.
-            Math.floor(Math.random() * 11), // 0-10
-            Math.floor(Math.random() * 5) + 1, // 1-5
-            Math.floor(Math.random() * 5) + 1  // 1-5
+            String.fromCharCode(65 + i),
+            Math.floor(Math.random() * 11),
+            Math.floor(Math.random() * 5) + 1,
+            Math.floor(Math.random() * 5) + 1
         )
     ).sort((a, b) => a.arrivalTime - b.arrivalTime);
 }
@@ -39,71 +34,91 @@ function generateProcesses() {
 function calculateFCFS(processes) {
     let currentTime = 0;
     const result = processes.map(p => {
-        const process = { ...p };
+        const process = new Process(p.id, p.arrivalTime, p.burstTime, p.priority);
         currentTime = Math.max(currentTime, process.arrivalTime);
         process.startTime = currentTime;
         process.finishTime = currentTime + process.burstTime;
         process.turnaroundTime = process.finishTime - process.arrivalTime;
         process.waitingTime = process.turnaroundTime - process.burstTime;
         currentTime = process.finishTime;
-        process.executionHistory = [{ start: process.startTime, end: process.finishTime }];
+        process.addExecution(process.startTime, process.finishTime);
         return process;
     });
-    
     return getMetrics(result);
 }
 
 // Calculate SRTF (Shortest Remaining Time First)
 function calculateSRTF(processes) {
-    const queue = processes.map(p => ({ ...p, remainingTime: p.burstTime }));
+    // Create deep copies of processes
+    const processQueue = processes.map(p => {
+        const process = new Process(p.id, p.arrivalTime, p.burstTime, p.priority);
+        process.remainingTime = process.burstTime;
+        return process;
+    });
+
     const completed = [];
     let currentTime = 0;
-    let current = null;
-    let last = null;
+    let currentProcess = null;
 
-    while (queue.length > 0 || current) {
-        const arrived = queue.filter(p => p.arrivalTime <= currentTime);
-        queue.splice(0, arrived.length);
-        
-        if (current?.remainingTime > 0) arrived.push(current);
-        current = null;
+    while (completed.length < processes.length) {
+        // Find all arrived processes that aren't completed
+        const availableProcesses = processQueue.filter(p => 
+            p.arrivalTime <= currentTime && 
+            p.remainingTime > 0
+        );
 
-        if (arrived.length > 0) {
-            current = arrived.sort((a, b) => a.remainingTime - b.remainingTime)[0];
-            if (last !== current) {
-                if (last?.executionHistory.at(-1)?.end === undefined) {
-                    last.executionHistory.at(-1).end = currentTime;
-                }
-                if (current.remainingTime > 0) {
-                    current.addExecution(currentTime, undefined);
-                }
-            }
+        // If no process is available, jump to the next arrival time
+        if (availableProcesses.length === 0) {
+            const nextArrival = Math.min(...processQueue
+                .filter(p => p.remainingTime > 0)
+                .map(p => p.arrivalTime));
+            currentTime = nextArrival;
+            continue;
         }
 
-        if (current) {
-            currentTime++;
-            current.remainingTime--;
-            if (current.remainingTime === 0) {
-                current.executionHistory.at(-1).end = currentTime;
-                current.finishTime = currentTime;
-                current.turnaroundTime = current.finishTime - current.arrivalTime;
-                current.waitingTime = current.turnaroundTime - current.burstTime;
-                completed.push(current);
-                last = null;
-            } else {
-                last = current;
+        // Find the process with shortest remaining time
+        const shortestProcess = availableProcesses.reduce((shortest, current) => {
+            if (current.remainingTime < shortest.remainingTime) {
+                return current;
+            } else if (current.remainingTime === shortest.remainingTime) {
+                return current.arrivalTime < shortest.arrivalTime ? current : shortest;
             }
-        } else {
-            currentTime++;
+            return shortest;
+        }, availableProcesses[0]);
+
+        // If we're switching to a new process
+        if (currentProcess !== shortestProcess) {
+            if (currentProcess && currentProcess.executionHistory.length > 0) {
+                currentProcess.executionHistory[currentProcess.executionHistory.length - 1].end = currentTime;
+            }
+            if (!shortestProcess.startTime) {
+                shortestProcess.startTime = currentTime;
+            }
+            shortestProcess.addExecution(currentTime, undefined);
+            currentProcess = shortestProcess;
+        }
+
+        // Execute for 1 time unit
+        currentTime++;
+        shortestProcess.remainingTime--;
+
+        // If process completes
+        if (shortestProcess.remainingTime === 0) {
+            shortestProcess.executionHistory[shortestProcess.executionHistory.length - 1].end = currentTime;
+            shortestProcess.finishTime = currentTime;
+            shortestProcess.turnaroundTime = shortestProcess.finishTime - shortestProcess.arrivalTime;
+            shortestProcess.waitingTime = shortestProcess.turnaroundTime - shortestProcess.burstTime;
+            completed.push(shortestProcess);
+            currentProcess = null;
         }
     }
-    
+
     return getMetrics(completed);
 }
 
 // Calculate Non-Preemptive Highest Priority First
 function calculateNPHPF(processes) {
-    const queue = [...processes];
+    const queue = processes.map(p => new Process(p.id, p.arrivalTime, p.burstTime, p.priority));
     const completed = [];
     let currentTime = 0;
 
@@ -112,7 +127,7 @@ function calculateNPHPF(processes) {
             .sort((a, b) => b.priority - a.priority);
 
         if (ready.length === 0) {
-            currentTime = queue[0].arrivalTime;
+            currentTime = Math.min(...queue.map(p => p.arrivalTime));
             continue;
         }
 
@@ -127,16 +142,21 @@ function calculateNPHPF(processes) {
         process.waitingTime = process.turnaroundTime - process.burstTime;
         completed.push(process);
     }
-
     return getMetrics(completed);
 }
 
 // Calculate Round Robin scheduling
 function calculateRoundRobin(processes, timeQuantum = 2) {
-    const queue = processes.map(p => ({ ...p, remainingTime: p.burstTime }));
+    const queue = processes.map(p => {
+        const process = new Process(p.id, p.arrivalTime, p.burstTime, p.priority);
+        process.remainingTime = process.burstTime;
+        return process;
+    });
     const completed = [];
     let currentTime = 0;
     const ready = [];
+
+    queue.sort((a, b) => a.arrivalTime - b.arrivalTime);
 
     while (queue.length > 0 || ready.length > 0) {
         while (queue.length > 0 && queue[0].arrivalTime <= currentTime) {
@@ -165,9 +185,10 @@ function calculateRoundRobin(processes, timeQuantum = 2) {
                 process.waitingTime = process.turnaroundTime - process.burstTime;
                 completed.push(process);
             }
+        } else {
+            currentTime++;
         }
     }
-
     return getMetrics(completed);
 }
 
@@ -184,12 +205,6 @@ function getMetrics(processes) {
     };
 }
 
-// Sort processes alphabetically by ID
-function sortProcessesAlphabetically(processes) {
-    return [...processes].sort((a, b) => a.id.localeCompare(b.id));
-}
-
-// Display processes in the table with animations
 function displayProcesses(processes) {
     const tbody = document.querySelector('#process-table tbody');
     tbody.innerHTML = '';
@@ -206,16 +221,17 @@ function displayProcesses(processes) {
             <td>${p.waitingTime || '-'}</td>
         `;
         tbody.appendChild(row);
-        setTimeout(() => row.style.cssText = 'opacity: 1; transform: none;', i * 100);
+        requestAnimationFrame(() => {
+            setTimeout(() => row.style.cssText = 'opacity: 1; transform: none;', i * 50);
+        });
     });
 }
 
-// Display Gantt chart with enhanced interactivity
 function displayGanttChart(processes, algorithm) {
     const container = document.getElementById('gantt-display');
     container.innerHTML = '';
     
-    const maxFinishTime = Math.max(...processes.map(p => p.finishTime));
+    const maxFinishTime = Math.max(...processes.map(p => p.finishTime || 0));
     const timeUnitWidth = 50;
     const minWidth = Math.max(1200, (maxFinishTime + 2) * timeUnitWidth);
     
@@ -237,9 +253,11 @@ function displayGanttChart(processes, algorithm) {
         labels.appendChild(label);
     });
     
-    const segments = (algorithm === 'rr' || algorithm === 'srtf') ?
-        processes.flatMap(p => p.executionHistory.map(h => ({ ...h, id: p.id, process: p }))) :
-        processes.map(p => ({ start: p.startTime, end: p.finishTime, id: p.id, process: p }));
+    let segments = (algorithm === 'rr' || algorithm === 'srtf') ?
+        processes.flatMap(p => p.executionHistory.map(h => ({ ...h, id: p.id }))) :
+        processes.map(p => ({ start: p.startTime, end: p.finishTime, id: p.id }));
+    
+    segments = segments.filter(s => s && s.start >= 0 && s.end > s.start);
     
     segments.forEach((segment, i) => {
         const block = document.createElement('div');
@@ -253,9 +271,10 @@ function displayGanttChart(processes, algorithm) {
             transition: all 0.3s ease;
         `;
         block.textContent = segment.id;
-        
         chartArea.appendChild(block);
-        setTimeout(() => block.style.cssText += 'opacity: 1; transform: scale(1);', i * 100);
+        requestAnimationFrame(() => {
+            setTimeout(() => block.style.cssText += 'opacity: 1; transform: scale(1);', i * 50);
+        });
     });
     
     const timeline = document.createElement('div');
@@ -287,7 +306,7 @@ function displayGanttChart(processes, algorithm) {
     container.appendChild(wrapper);
 }
 
-// Event Listeners with loading states and animations
+// Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
     let processes = [];
     const generateBtn = document.getElementById('generate');
@@ -295,15 +314,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const algorithmSelect = document.getElementById('algorithm');
 
     generateBtn.addEventListener('click', () => {
-        generateBtn.classList.add('loading');
         generateBtn.disabled = true;
-        setTimeout(() => {
-            processes = generateProcesses();
-            displayProcesses(processes);
-            document.getElementById('gantt-display').innerHTML = '';
-            generateBtn.classList.remove('loading');
-            generateBtn.disabled = false;
-        }, 500);
+        processes = generateProcesses();
+        displayProcesses(processes);
+        document.getElementById('gantt-display').innerHTML = '';
+        generateBtn.disabled = false;
     });
 
     solveBtn.addEventListener('click', () => {
@@ -312,11 +327,22 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        solveBtn.classList.add('loading');
         solveBtn.disabled = true;
         
-        setTimeout(() => {
+        try {
             const algorithm = algorithmSelect.value;
+            // Create copies that preserve the exact original values
+            const processesCopy = processes.map(p => {
+                const copy = new Process(p.id, p.arrivalTime, p.burstTime, p.priority);
+                // Ensure we copy any existing calculated values
+                copy.finishTime = p.finishTime;
+                copy.turnaroundTime = p.turnaroundTime;
+                copy.waitingTime = p.waitingTime;
+                copy.startTime = p.startTime;
+                copy.executionHistory = [...(p.executionHistory || [])];
+                return copy;
+            });
+            
             const calculators = {
                 fcfs: calculateFCFS,
                 srtf: calculateSRTF,
@@ -324,12 +350,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 rr: calculateRoundRobin
             };
             
-            const result = calculators[algorithm](processes);
+            const result = calculators[algorithm](processesCopy);
             displayProcesses(result.processes);
             displayGanttChart(result.processes, algorithm);
-            
-            solveBtn.classList.remove('loading');
+        } catch (error) {
+            alert('An error occurred while solving: ' + error.message);
+        } finally {
             solveBtn.disabled = false;
-        }, 500);
+        }
     });
 }); 
