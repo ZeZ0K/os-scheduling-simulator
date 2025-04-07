@@ -53,9 +53,3 @@ Then visit `http://localhost:8000` in your browser.
 - JavaScript (ES6+)
 - No external dependencies
 
-## License
-
-MIT License - feel free to use this project for learning and teaching purposes. 
-=======
-# os-scheduler-
->>>>>>> 4b75e53e8881dcb89efa09bac3d7bbadf375a784
