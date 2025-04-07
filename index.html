@@ -161,6 +161,7 @@
             background-color: white;
             border-radius: 8px;
             overflow: hidden;
+            position: relative;
         }
 
         .process-labels {
@@ -187,6 +188,15 @@
             background-color: white;
             height: 100%;
             overflow: visible;
+            padding-left: 0;
+            padding-top: 10px;
+            padding-bottom: 10px;
+        }
+
+        .process-row {
+            position: relative;
+            height: 50px;
+            margin-bottom: 10px;
         }
 
         .process-block {
@@ -204,6 +214,8 @@
             transition: all 0.3s ease;
             cursor: pointer;
             z-index: 1;
+            transform-origin: center;
+            box-sizing: border-box;
         }
 
         .process-block:hover {
@@ -218,6 +230,8 @@
             padding-top: 0.5rem;
             border-top: 1px solid var(--border-color);
             background-color: white;
+            margin-left: 120px;
+            box-sizing: border-box;
         }
 
         .time-marker {
@@ -226,6 +240,7 @@
             height: 10px;
             background-color: var(--border-color);
             top: 0;
+            transform: translateX(-50%);
         }
 
         .time-label {
@@ -235,6 +250,7 @@
             font-size: 0.875rem;
             color: var(--text-color);
             font-weight: 500;
+            text-align: center;
         }
 
         @media (max-width: 768px) {
@@ -263,7 +279,7 @@
             animation: pulse 1.5s infinite;
         }
 
-        /* Add tooltip styles */
+        /* Update tooltip styles */
         .tooltip {
             position: absolute;
             background-color: rgba(0, 0, 0, 0.8);
@@ -275,10 +291,61 @@
             pointer-events: none;
             opacity: 0;
             transition: opacity 0.2s ease;
+            white-space: nowrap;
+            transform: translateX(-50%);
+            left: 50%;
+        }
+
+        /* Add tooltip position classes */
+        .process-block:nth-child(odd) .tooltip {
+            bottom: 100%;
+            margin-bottom: 5px;
+        }
+
+        .process-block:nth-child(even) .tooltip {
+            top: 100%;
+            margin-top: 5px;
         }
 
         .process-block:hover .tooltip {
             opacity: 1;
+        }
+
+        /* Add grid lines */
+        .chart-area::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: linear-gradient(
+                to right,
+                var(--border-color) 1px,
+                transparent 1px
+            );
+            background-size: 50px 100%;
+            pointer-events: none;
+            opacity: 0.1;
+        }
+
+        /* Add vertical grid lines */
+        .timeline::before {
+            content: '';
+            position: absolute;
+            top: -300px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: linear-gradient(
+                to right,
+                var(--border-color) 1px,
+                transparent 1px
+            );
+            background-size: 50px 100%;
+            pointer-events: none;
+            opacity: 0.1;
+            z-index: 0;
         }
     </style>
 </head>
