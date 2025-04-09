@@ -11,6 +11,7 @@ class Process {
         this.waitingTime = 0;
         this.startTime = 0;
         this.executionHistory = [];
+        this.lastExecutionEnd = arrivalTime; // Track last execution end for waiting time
     }
 
     addExecution(start, end) {
@@ -38,8 +39,8 @@ function calculateFCFS(processes) {
         currentTime = Math.max(currentTime, process.arrivalTime);
         process.startTime = currentTime;
         process.finishTime = currentTime + process.burstTime;
+        process.waitingTime = process.startTime - process.arrivalTime;
         process.turnaroundTime = process.finishTime - process.arrivalTime;
-        process.waitingTime = process.turnaroundTime - process.burstTime;
         currentTime = process.finishTime;
         process.addExecution(process.startTime, process.finishTime);
         return process;
@@ -150,17 +151,24 @@ function calculateRoundRobin(processes, timeQuantum = 2) {
     const queue = processes.map(p => {
         const process = new Process(p.id, p.arrivalTime, p.burstTime, p.priority);
         process.remainingTime = process.burstTime;
+        process.lastExecutionEnd = process.arrivalTime; // Track last execution end for waiting time
         return process;
     });
     const completed = [];
     let currentTime = 0;
     const ready = [];
 
+    // Sort by arrival time initially
     queue.sort((a, b) => a.arrivalTime - b.arrivalTime);
 
     while (queue.length > 0 || ready.length > 0) {
+        // Move arrived processes to ready queue
         while (queue.length > 0 && queue[0].arrivalTime <= currentTime) {
-            ready.push(queue.shift());
+            const process = queue.shift();
+            if (!process.startTime) {
+                process.startTime = currentTime;
+            }
+            ready.push(process);
         }
 
         if (ready.length === 0 && queue.length > 0) {
@@ -170,25 +178,40 @@ function calculateRoundRobin(processes, timeQuantum = 2) {
 
         if (ready.length > 0) {
             const process = ready.shift();
-            if (!process.startTime) process.startTime = currentTime;
+            
+            // Calculate waiting time for this execution slice
+            if (currentTime > process.lastExecutionEnd) {
+                process.waitingTime += (currentTime - process.lastExecutionEnd);
+            }
             
             const execTime = Math.min(timeQuantum, process.remainingTime);
             process.addExecution(currentTime, currentTime + execTime);
             process.remainingTime -= execTime;
             currentTime += execTime;
+            process.lastExecutionEnd = currentTime;
 
             if (process.remainingTime > 0) {
+                // If process still needs more time, add it back to ready queue
+                // But first check if any new processes have arrived
+                while (queue.length > 0 && queue[0].arrivalTime <= currentTime) {
+                    const newProcess = queue.shift();
+                    if (!newProcess.startTime) {
+                        newProcess.startTime = currentTime;
+                    }
+                    ready.push(newProcess);
+                }
                 ready.push(process);
             } else {
                 process.finishTime = currentTime;
                 process.turnaroundTime = process.finishTime - process.arrivalTime;
-                process.waitingTime = process.turnaroundTime - process.burstTime;
+                // Waiting time has been accumulated throughout execution
                 completed.push(process);
             }
         } else {
             currentTime++;
         }
     }
+
     return getMetrics(completed);
 }
 
@@ -218,7 +241,7 @@ function displayProcesses(processes) {
             <td>${p.burstTime}</td>
             <td>${p.finishTime || '-'}</td>
             <td>${p.turnaroundTime || '-'}</td>
-            <td>${p.waitingTime || '-'}</td>
+            <td>${p.waitingTime || '0'}</td>
         `;
         tbody.appendChild(row);
         requestAnimationFrame(() => {
@@ -340,6 +363,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 copy.waitingTime = p.waitingTime;
                 copy.startTime = p.startTime;
                 copy.executionHistory = [...(p.executionHistory || [])];
+                copy.lastExecutionEnd = p.lastExecutionEnd;
                 return copy;
             });
             
