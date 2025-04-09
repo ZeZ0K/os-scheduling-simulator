@@ -254,9 +254,22 @@ function displayGanttChart(processes, algorithm) {
     const container = document.getElementById('gantt-display');
     container.innerHTML = '';
     
-    const maxFinishTime = Math.max(...processes.map(p => p.finishTime || 0));
+    // Get all segments first to properly calculate max time
+    let segments = (algorithm === 'rr' || algorithm === 'srtf') ?
+        processes.flatMap(p => p.executionHistory.map(h => ({ ...h, id: p.id }))) :
+        processes.map(p => ({ start: p.startTime, end: p.finishTime, id: p.id }));
+    
+    segments = segments.filter(s => s && s.start >= 0 && s.end > s.start);
+    
+    // Calculate max finish time from all segments
+    const maxFinishTime = Math.max(
+        ...segments.map(s => s.end),
+        ...processes.map(p => p.finishTime || 0)
+    );
+    
     const timeUnitWidth = 50;
-    const minWidth = Math.max(1200, (maxFinishTime + 2) * timeUnitWidth);
+    // Add extra padding to ensure visibility of last segments
+    const minWidth = Math.max(1200, (maxFinishTime + 4) * timeUnitWidth);
     
     const chart = document.createElement('div');
     chart.className = 'gantt-chart';
@@ -275,12 +288,6 @@ function displayGanttChart(processes, algorithm) {
         label.textContent = `Process ${p.id}`;
         labels.appendChild(label);
     });
-    
-    let segments = (algorithm === 'rr' || algorithm === 'srtf') ?
-        processes.flatMap(p => p.executionHistory.map(h => ({ ...h, id: p.id }))) :
-        processes.map(p => ({ start: p.startTime, end: p.finishTime, id: p.id }));
-    
-    segments = segments.filter(s => s && s.start >= 0 && s.end > s.start);
     
     segments.forEach((segment, i) => {
         const block = document.createElement('div');
@@ -304,7 +311,8 @@ function displayGanttChart(processes, algorithm) {
     timeline.className = 'timeline';
     timeline.style.minWidth = `${minWidth - 120}px`;
     
-    for (let i = 0; i <= maxFinishTime + 1; i++) {
+    // Extend timeline markers to cover the entire range
+    for (let i = 0; i <= maxFinishTime + 2; i++) {
         const marker = document.createElement('div');
         marker.className = 'time-marker';
         marker.style.left = `${i * timeUnitWidth}px`;
@@ -357,7 +365,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Create copies that preserve the exact original values
             const processesCopy = processes.map(p => {
                 const copy = new Process(p.id, p.arrivalTime, p.burstTime, p.priority);
-                // Ensure we copy any existing calculated values
+                
                 copy.finishTime = p.finishTime;
                 copy.turnaroundTime = p.turnaroundTime;
                 copy.waitingTime = p.waitingTime;
